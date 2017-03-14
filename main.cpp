@@ -390,9 +390,9 @@ int main(int argc, char *argv[])
 {
 	using namespace Eigen;
 	using namespace std;
-	igl::readOBJ("../shared/data/arm.obj", V, F);
+	igl::readOBJ("../data/arm.obj", V, F);
 	U = V;
-	igl::readTGF("../shared/data/arm.tgf", C, BE);
+	igl::readTGF("../data/arm.tgf", C, BE);
 	// retrieve parents for forward kinematics
 	igl::directed_edge_parents(BE, P);
 	RotationList rest_pose;
@@ -404,7 +404,7 @@ int main(int argc, char *argv[])
 	const Quaterniond bend(AngleAxisd(-igl::PI*0.7, Vector3d(0, 0, 1)));
 	poses[3][2] = rest_pose[2] * bend*rest_pose[2].conjugate();
 
-	igl::readDMAT("../shared/data/arm-weights.dmat", W);
+	igl::readDMAT("../data/arm-weights.dmat", W);
 	igl::lbs_matrix(V, W, M);
 
 	// Plot the mesh with pseudocolors
