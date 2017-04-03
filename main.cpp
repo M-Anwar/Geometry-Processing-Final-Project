@@ -84,13 +84,13 @@ float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transf
 	gradient = grad_3.topRows(3);
 	return reparam(distance);
 }
-float vert_distance(const ImplicitMesh &mesh, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
+float vert_distance(const ImplicitMesh &mesh, const Eigen::MatrixXd &vertices, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
 	Eigen::Vector3d g;
 	float d, result = -FLT_MAX;
 	for (int j = 0; j < mesh.weights.cols();j++) { //Applied the union operator only
 	//for (int j = 0; j < 3;j++) {
 		if (mesh.weights(vertex_idx, j)>0.1) {
-			d = distance(mesh, j, transforms, mesh.vertices.row(vertex_idx), g);
+			d = distance(mesh, j, transforms, vertices.row(vertex_idx), g);
 			if (d > result) {
 				result = d;
 				gradient = g;
@@ -182,7 +182,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 				//Compute new HRBF distance
 				for (int vert = 0; vert < U.rows();vert++) {
 					Vector3d gradient;
-					mesh.offsets(vert) = vert_distance(mesh, vert, T, gradient);
+					mesh.offsets(vert) = vert_distance(mesh, U,vert, T, gradient);
 
 					if (iter > 0 && gradient.dot(mesh.previous_gradients.row(vert))< 0.5736f) {
 						mesh.betas(vert) = 1.0f;
@@ -600,7 +600,7 @@ int main(int argc, char *argv[])
 	MatrixXd offsets(mesh.vertices.rows(), 1);
 	for (int i = 0;i < mesh.vertices.rows();i++) {
 		Vector3d dummy;
-		offsets(i) = vert_distance(mesh, i, T, dummy);
+		offsets(i) = vert_distance(mesh, mesh.vertices, i, T, dummy);
 	}
 	mesh.original_offsets = offsets;
 	mesh.previous_gradients = MatrixXd::Zero(mesh.vertices.rows(), 3);
