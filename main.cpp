@@ -68,6 +68,17 @@ float reparam(float d) {
 		(-15.0f / 16.0f) * d +
 		0.5f;
 }
+float reparam_grad(float d) {
+	double threshold = 3.0;
+	if (d >= -threshold && d <= threshold) {
+		return 0.0f;
+	}	
+	d /= threshold;
+	return
+		(-15.0f / (16.0f*threshold)) * d * d * d * d +
+		(15.0f / (8.0f*threshold)) * d * d +
+		(-15.0f / (16.0f*threshold));		
+}
 float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transforms, const Eigen::Vector3d &point, Eigen::Vector3d &gradient) {
 	//get transform
 	Eigen::MatrixXd T_3 = transforms.block(bone*(3 + 1), 0, 3 + 1, 3).transpose();
@@ -81,7 +92,7 @@ float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transf
 
 	Eigen::Vector4d grad_2(grad(0), grad(1), grad(2), 0);
 	Eigen::Vector4d grad_3 = -(T * grad_2);
-	gradient = grad_3.topRows(3);
+	gradient = reparam_grad(distance)*grad_3.topRows(3);
 	return reparam(distance);
 }
 float vert_distance(const ImplicitMesh &mesh, const Eigen::MatrixXd &vertices, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
@@ -177,7 +188,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 			int v_count = mesh.vertices.rows();
 
 			mesh.betas = MatrixXd::Zero(v_count, 1);
-			for (int iter = 0; iter < 1; iter++) {
+			for (int iter = 0; iter < 10; iter++) {
 
 				//Compute new HRBF distance
 				for (int vert = 0; vert < U.rows();vert++) {
