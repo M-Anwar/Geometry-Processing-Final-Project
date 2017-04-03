@@ -24,7 +24,7 @@
 #include <igl/parula.h>
 #include <igl/random_points_on_mesh.h>
 
-
+#include<float.h>
 #include "skin_implicit.h"
 
 typedef HRBF_fit<float, 3, Rbf_pow3<float> > HRBF;
@@ -86,7 +86,7 @@ float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transf
 }
 float vert_distance(const ImplicitMesh &mesh, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
 	Eigen::Vector3d g;
-	float d, result = -FLT_MIN;
+	float d, result = -FLT_MAX;
 	for (int j = 0; j < mesh.weights.cols();j++) { //Applied the union operator only
 	//for (int j = 0; j < 3;j++) {
 		if (mesh.weights(vertex_idx, j)>0.1) {
@@ -195,7 +195,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 						mesh.betas(vert) = 0.001;
 						continue;
 					}
-					U.row(vert) = U.row(vert) + 0.35*delta*gradient;
+					U.row(vert)+= 0.35*delta*gradient;
 				}
 			}
 		}
