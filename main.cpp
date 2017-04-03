@@ -47,8 +47,59 @@ struct ImplicitMesh {
 	std::vector<Bone> bones;
 	Eigen::MatrixXd C;
 	Eigen::MatrixXi BE;
+	Eigen::VectorXi parents;
 
+	//Implicit Mesh optimization stuff
+	Eigen::MatrixXd betas;
+	Eigen::MatrixXd original_offsets;
+	Eigen::MatrixXd offsets;
+	Eigen::MatrixXd previous_gradients;
 };
+float reparam(float d) {
+	double threshold = 2.0;
+	if (d <= -threshold)
+		return 1.0f;
+	if (d >= threshold)
+		return 0.0f;
+	d /= threshold;
+	return
+		(-3.0f / 16.0f) * d * d * d * d * d +
+		(5.0f / 8.0f) * d * d * d +
+		(-15.0f / 16.0f) * d +
+		0.5f;
+}
+float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transforms, const Eigen::Vector3d &point, Eigen::Vector3d &gradient) {
+	//get transform
+	Eigen::MatrixXd T_3 = transforms.block(bone*(3 + 1), 0, 3 + 1, 3).transpose();
+	Eigen::MatrixXd T(4, 4);
+	T << T_3, 0, 0, 0, 1;
+	Eigen::MatrixXd inverse = T.inverse();
+
+	Eigen::Vector4d new_point = inverse * point.homogeneous();
+	double distance = mesh.bones[bone].hrbf.eval(HRBF::Vector(new_point[0], new_point[1], new_point[2]));
+	HRBF::Vector grad = mesh.bones[bone].hrbf.grad(HRBF::Vector(new_point[0], new_point[1], new_point[2]));
+
+	Eigen::Vector4d grad_2(grad(0), grad(1), grad(2), 0);
+	Eigen::Vector4d grad_3 = -(T * grad_2);
+	gradient = grad_3.topRows(3);
+	return reparam(distance);
+}
+float vert_distance(const ImplicitMesh &mesh, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
+	Eigen::Vector3d g;
+	float d, result = -FLT_MIN;
+	for (int j = 0; j < mesh.weights.cols();j++) { //Applied the union operator only
+	//for (int j = 0; j < 3;j++) {
+		if (mesh.weights(vertex_idx, j)>0.1) {
+			d = distance(mesh, j, transforms, mesh.vertices.row(vertex_idx), g);
+			if (d > result) {
+				result = d;
+				gradient = g;
+			}
+		}
+	}
+	return result;
+}
+
 
 
 typedef std::vector<Eigen::Quaterniond, Eigen::aligned_allocator<Eigen::Quaterniond> > RotationList;
@@ -120,8 +171,33 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 			//igl::dqs(V, W, vQ, vT, U);
 			//skin_implicit(V, F, W, T, vQ, vT, U);
 			//Do implicit skinning here
-			igl::dqs(V, W, vQ, vT, U);
+			//igl::dqs(V, W, vQ, vT, U);
+			U = M*T;
 
+			int v_count = mesh.vertices.rows();
+
+			mesh.betas = MatrixXd::Zero(v_count, 1);
+			for (int iter = 0; iter < 1; iter++) {
+
+				//Compute new HRBF distance
+				for (int vert = 0; vert < U.rows();vert++) {
+					Vector3d gradient;
+					mesh.offsets(vert) = vert_distance(mesh, vert, T, gradient);
+
+					if (iter > 0 && gradient.dot(mesh.previous_gradients.row(vert))< 0.5736f) {
+						mesh.betas(vert) = 1.0f;
+						continue;
+					}
+					mesh.previous_gradients.row(vert) = gradient;
+
+					double delta = mesh.original_offsets(vert) - mesh.offsets(vert);
+					if (std::abs(delta) < 0.0001f) {
+						mesh.betas(vert) = 0.001;
+						continue;
+					}
+					U.row(vert) = U.row(vert) + 0.35*delta*gradient;
+				}
+			}
 		}
 		else
 		{
@@ -168,14 +244,8 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 				C.block(color_row, 0, recon_face_rows,3) = bone_colors.row(i%mesh.bones.size()).replicate(recon_face_rows, 1);
 				color_row += recon_face_rows;
 					
-			}
+			}			
 			
-			
-			/*Eigen::MatrixXd C(all_faces.rows(), 3);
-			C << Eigen::RowVector3d(1.0, 0.0, 0.0).replicate(mesh.bones[0].hrbf_recon_faces.rows(), 1),
-				Eigen::RowVector3d(0.0, 1.0, 0.0).replicate(mesh.bones[1].hrbf_recon_faces.rows(), 1),
-				Eigen::RowVector3d(0.0, 0.0, 1.0).replicate(mesh.bones[2].hrbf_recon_faces.rows(), 1),
-				Eigen::RowVector3d(1.0, 1.0, 0.0).replicate(mesh.bones[3].hrbf_recon_faces.rows(), 1);*/
 			viewer.data.set_mesh(all_vertices, all_faces);
 			viewer.data.set_colors(C);
 
@@ -273,6 +343,7 @@ int main(int argc, char *argv[])
 	C = 3 * C;
 	// retrieve parents for forward kinematics
 	igl::directed_edge_parents(BE, P);
+	
 	RotationList rest_pose;
 	igl::directed_edge_orientations(C, BE, rest_pose);
 	poses.resize(4, RotationList(4, Quaterniond::Identity()));
@@ -296,6 +367,7 @@ int main(int argc, char *argv[])
 	mesh.bones.resize(W.cols());
 	mesh.C = C;
 	mesh.BE = BE;
+	mesh.parents = P;
 
 	///Segment the Mesh
 	std::cout << "Segmenting Mesh-> Bones: " << W.cols() << endl;
@@ -350,7 +422,7 @@ int main(int argc, char *argv[])
 		mesh.bones[i].faces = MatrixXi(bone_faces);
 		igl::per_vertex_normals(mesh.bones[i].vertices, mesh.bones[i].faces, mesh.bones[i].normals);
 
-		cout << "\tBones: " << mesh.bones[i].vertices.rows() << 
+		cout << "\tVertices: " << mesh.bones[i].vertices.rows() << 
 				" Faces: " << mesh.bones[i].faces.rows() << endl;
 	}
 	//cout << "C values" << endl;
@@ -503,7 +575,24 @@ int main(int argc, char *argv[])
 			mesh.bones[i].hrbf_recon_verts = mesh.bones[i].vertices;
 		}
 	}
-	
+
+	//Set identity transform to calculate initial signed distances.
+	MatrixXd T(BE.rows()*(3 + 1), 3);
+	for (int e = 0;e<BE.rows();e++)
+	{
+		Affine3d a = Affine3d::Identity();		
+		T.block(e*(3 + 1), 0, 3 + 1, 3) =
+			a.matrix().transpose().block(0, 0, 3 + 1, 3);
+	}
+	//Pre-calculate initial offsets in the HRBF field.
+	MatrixXd offsets(mesh.vertices.rows(), 1);
+	for (int i = 0;i < mesh.vertices.rows();i++) {
+		Vector3d dummy;
+		offsets(i) = vert_distance(mesh, i, T, dummy);
+	}
+	mesh.original_offsets = offsets;
+	mesh.previous_gradients.resize(mesh.vertices.rows(), 3);
+	mesh.offsets.resize(mesh.vertices.rows(), 1);
 
 	bone_colors << 0.0, 1.0, 1.0,
 		0.0, 1.0, 0.0,
@@ -514,7 +603,9 @@ int main(int argc, char *argv[])
 	viewer.data.set_mesh(U, F);
 	viewer.data.set_edges(C, BE, sea_green);
 	
-	
+	/*Eigen::MatrixXd Color;
+	igl::parula(mesh.original_offsets, mesh.original_offsets.minCoeff(), mesh.original_offsets.maxCoeff(), Color);
+	viewer.data.set_colors(Color);*/
 	
 
 	viewer.core.show_lines = false;
