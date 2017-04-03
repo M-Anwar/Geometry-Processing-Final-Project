@@ -603,8 +603,8 @@ int main(int argc, char *argv[])
 		offsets(i) = vert_distance(mesh, i, T, dummy);
 	}
 	mesh.original_offsets = offsets;
-	mesh.previous_gradients.resize(mesh.vertices.rows(), 3);
-	mesh.offsets.resize(mesh.vertices.rows(), 1);
+	mesh.previous_gradients = MatrixXd::Zero(mesh.vertices.rows(), 3);
+	mesh.offsets = MatrixXd::Zero(mesh.vertices.rows(), 1);
 
 	bone_colors << 0.0, 1.0, 1.0,
 		0.0, 1.0, 0.0,
