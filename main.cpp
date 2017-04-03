@@ -56,7 +56,7 @@ struct ImplicitMesh {
 	Eigen::MatrixXd previous_gradients;
 };
 float reparam(float d) {
-	double threshold = 2.0;
+	double threshold = 3.0;
 	if (d <= -threshold)
 		return 1.0f;
 	if (d >= threshold)
@@ -196,6 +196,13 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 						continue;
 					}
 					U.row(vert)+= 0.35*delta*gradient;
+					mesh.offsets(vert) += 0.35 *delta;
+				}
+				for (int vert = 0; vert < U.rows();vert++) {
+					if (mesh.betas(vert) > 0.0f) {
+						continue;
+					}
+
 				}
 			}
 		}
@@ -262,7 +269,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 		}		
 
 		if (show_weights) {
-			Eigen::MatrixXd bone_weight = W.col(bone_index);
+			Eigen::MatrixXd bone_weight = mesh.offsets;//W.col(bone_index);
 			Eigen::MatrixXd Color;
 			igl::parula(bone_weight, bone_weight.minCoeff(), bone_weight.maxCoeff(), Color);
 			viewer.data.set_colors(Color);			
@@ -354,6 +361,10 @@ int main(int argc, char *argv[])
 	poses[3][2] = rest_pose[2] * bend*rest_pose[2].conjugate();
 
 	igl::readDMAT("../data/arm-weights.dmat", W);
+
+	MatrixXd mask = MatrixXd::Zero(W.rows(), W.cols());
+	W = (W.array() < 0.01).select(mask, W);
+
 		
 	igl::lbs_matrix(V, W, M);
 	
