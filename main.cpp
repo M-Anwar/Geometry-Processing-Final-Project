@@ -272,7 +272,8 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 			Eigen::MatrixXd bone_weight = mesh.offsets;//W.col(bone_index);
 			Eigen::MatrixXd Color;
 			igl::parula(bone_weight, bone_weight.minCoeff(), bone_weight.maxCoeff(), Color);
-			viewer.data.set_colors(Color);			
+			viewer.data.set_colors(Color);
+			viewer.data.add_edges(U, (U + 0.01*mesh.previous_gradients).eval(), Eigen::RowVector3d(1, 0, 0));
 		}
 		if (show_hrbf_points) {
 			viewer.data.set_points(mesh.bones[bone_index].hrbf_points, Eigen::RowVector3d(1, 0, 0));
