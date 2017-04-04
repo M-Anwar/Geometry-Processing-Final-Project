@@ -219,11 +219,11 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 					float mu = std::abs(mesh.original_offsets(vert) - mesh.offsets(vert)) -1.0f;
 					mu = std::max(0.0f, 1.0f - mu*mu*mu*mu);
 
-					Eigen::Vector3d barycenter;
+					Eigen::RowVector3d barycenter;
 					for (int j = 0;j < mesh.neighbors[vert].size();j++) {
 						barycenter += mesh.neighbor_weights[vert][j] * U.row(mesh.neighbors[vert][j]);
 					}
-					U.row(vert) = (1.0f - mu) * U.row(vert) + mu * barycenter;
+					U.row(vert) = ((1.0f - mu) * U.row(vert)) + (mu * barycenter);
 
 				}
 			}
@@ -636,9 +636,9 @@ int main(int argc, char *argv[])
 	for (unsigned i = 0; i < mesh.vertices.rows(); i++) {
 
 		// Project neighbors on tangent plane
-		std::vector<Eigen::Vector3d> projections;
+		std::vector<Eigen::RowVector3d> projections;
 		for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
-			Eigen::Vector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
+			Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
 			projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
 		}
 
@@ -690,7 +690,7 @@ int main(int argc, char *argv[])
 	viewer.core.line_width = 1;
 	viewer.core.point_size = 10;
 	viewer.core.trackball_angle.normalize();
-	//viewer.callback_pre_draw = &pre_draw;
+	viewer.callback_pre_draw = &pre_draw;
 	viewer.callback_key_down = &key_down;
 	viewer.core.is_animating = false;
 	viewer.core.camera_zoom = 2.5;
