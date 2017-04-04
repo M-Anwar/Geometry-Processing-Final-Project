@@ -219,7 +219,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 					float mu = std::abs(mesh.original_offsets(vert) - mesh.offsets(vert)) -1.0f;
 					mu = std::max(0.0f, 1.0f - mu*mu*mu*mu);
 
-					Eigen::RowVector3d barycenter;
+					Eigen::RowVector3d barycenter(0,0,0);
 					for (int j = 0;j < mesh.neighbors[vert].size();j++) {
 						barycenter += mesh.neighbor_weights[vert][j] * U.row(mesh.neighbors[vert][j]);
 					}
@@ -227,6 +227,30 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 
 				}
 			}
+			MatrixXd averages(U.rows(), 1);
+			for (unsigned n = 0; n < 3; ++n) {
+				for (unsigned i = 0; i < U.rows(); ++i) {
+					float sum = mesh.betas(i);
+					for (unsigned j = 0; j < mesh.neighbors[i].size(); ++j)
+						sum += mesh.betas(mesh.neighbors[i][j]);
+					averages(i) = sum / (mesh.neighbors[i].size() + 1);
+				}
+				mesh.betas = averages;				
+			}
+
+			// Compute centroids
+			MatrixXd centroids(U.rows(), 3);
+			for (unsigned i = 0; i < U.rows(); ++i) {
+				Eigen::RowVector3d centroid;
+				for (unsigned j = 0; j < mesh.neighbors[i].size(); ++j)
+					centroid += U.row(mesh.neighbors[i][j]);
+				centroids.row(i) =  (1.0f/ (float)mesh.neighbors[i].size())* centroid;
+			}
+
+			// Laplacian smoothing
+			for (unsigned i = 0; i < U.rows(); ++i)
+				U.row(i) = ((1.0f - mesh.betas(i)) * U.row(i)) + (mesh.betas(i) * centroids.row(i));
+
 		}
 		else
 		{
