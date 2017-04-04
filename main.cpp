@@ -23,6 +23,7 @@
 #include <igl/copyleft/marching_cubes.h>
 #include <igl/parula.h>
 #include <igl/random_points_on_mesh.h>
+#include <igl/adjacency_list.h>
 
 #include<float.h>
 #include "skin_implicit.h"
@@ -48,6 +49,8 @@ struct ImplicitMesh {
 	Eigen::MatrixXd C;
 	Eigen::MatrixXi BE;
 	Eigen::VectorXi parents;
+	std::vector<std::vector<int>> neighbors;
+	std::vector<std::vector<double>> neighbor_weights;
 
 	//Implicit Mesh optimization stuff
 	Eigen::MatrixXd betas;
@@ -56,7 +59,7 @@ struct ImplicitMesh {
 	Eigen::MatrixXd previous_gradients;
 };
 float reparam(float d) {
-	double threshold = 3.0;
+	double threshold = 0.5;
 	if (d <= -threshold)
 		return 1.0f;
 	if (d >= threshold)
@@ -92,7 +95,7 @@ float distance(const ImplicitMesh &mesh, int bone, const Eigen::MatrixXd &transf
 
 	Eigen::Vector4d grad_2(grad(0), grad(1), grad(2), 0);
 	Eigen::Vector4d grad_3 = -(T * grad_2);
-	gradient = reparam_grad(distance)*grad_3.topRows(3);
+	gradient = grad_3.topRows(3);
 	return reparam(distance);
 }
 float vert_distance(const ImplicitMesh &mesh, const Eigen::MatrixXd &vertices, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
@@ -213,6 +216,14 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 					if (mesh.betas(vert) > 0.0f) {
 						continue;
 					}
+					float mu = std::abs(mesh.original_offsets(vert) - mesh.offsets(vert)) -1.0f;
+					mu = std::max(0.0f, 1.0f - mu*mu*mu*mu);
+
+					Eigen::Vector3d barycenter;
+					for (int j = 0;j < mesh.neighbors[vert].size();j++) {
+						barycenter += mesh.neighbor_weights[vert][j] * U.row(mesh.neighbors[vert][j]);
+					}
+					U.row(vert) = (1.0f - mu) * U.row(vert) + mu * barycenter;
 
 				}
 			}
@@ -502,7 +513,7 @@ int main(int argc, char *argv[])
 		MatrixXd max_zero = (mesh.bones[i].vertices.rowwise() - mesh.C.row(mesh.BE(i, 0))).rowwise().norm();
 		double s_j0 = max_zero.minCoeff();
 		MatrixXd max_one = mesh.bones[i].vertices.rowwise() - mesh.C.row(mesh.BE(i, 1));
-		double s_j1 = max_zero.rowwise().norm().minCoeff();
+		double s_j1 = max_one.rowwise().norm().minCoeff();
 		RowVector3d n_j0 = mesh.C.row(mesh.BE(i, 0)) - mesh.C.row(mesh.BE(i, 1));
 		RowVector3d n_j1 = mesh.C.row(mesh.BE(i, 1)) - mesh.C.row(mesh.BE(i, 0));
 		n_j0.normalize(); n_j1.normalize();		
@@ -617,6 +628,44 @@ int main(int argc, char *argv[])
 	mesh.previous_gradients = MatrixXd::Zero(mesh.vertices.rows(), 3);
 	mesh.offsets = MatrixXd::Zero(mesh.vertices.rows(), 1);
 
+	//Compute neighbors 
+	igl::adjacency_list(F, mesh.neighbors);
+	
+	// Compute mean value coordinates
+	mesh.neighbor_weights.resize(mesh.vertices.rows());
+	for (unsigned i = 0; i < mesh.vertices.rows(); i++) {
+
+		// Project neighbors on tangent plane
+		std::vector<Eigen::Vector3d> projections;
+		for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
+			Eigen::Vector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
+			projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
+		}
+
+		// Compute angles
+		std::vector<float> angles;
+		for (unsigned j = 0; j < projections.size(); ++j) {
+			float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);			
+			angles.push_back(std::acos(cosine));
+		}
+
+		// Compute barycentric coordinates
+		float sum = 0;
+		for (unsigned j = 0; j < projections.size(); ++j) {
+			float length = projections[j].norm();
+			float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
+			float tan2 = std::tan(angles[j] * 0.5f);
+			float weight = (tan1 + tan2) / length;
+			mesh.neighbor_weights[i].push_back(weight);
+			sum += weight;
+		}
+
+		// Normalize weights
+		for (unsigned j = 0; j < projections.size(); ++j)
+			mesh.neighbor_weights[i][j] /= sum;
+	}
+
+
 	bone_colors << 0.0, 1.0, 1.0,
 		0.0, 1.0, 0.0,
 		0.0, 0.0, 1.0,
@@ -629,14 +678,19 @@ int main(int argc, char *argv[])
 	/*Eigen::MatrixXd Color;
 	igl::parula(mesh.original_offsets, mesh.original_offsets.minCoeff(), mesh.original_offsets.maxCoeff(), Color);
 	viewer.data.set_colors(Color);*/
-	
+
+	/*Eigen::MatrixXd neigh_points(mesh.neighbors[0].size(), 3);
+	for (int i = 0;i < neigh_points.rows();i++) {
+		neigh_points.row(i) = mesh.vertices.row(mesh.neighbors[0][i]);
+	}
+	viewer.data.set_points(neigh_points, Eigen::RowVector3d(1, 0, 0));*/
 
 	viewer.core.show_lines = false;
 	viewer.core.show_overlay_depth = false;
 	viewer.core.line_width = 1;
 	viewer.core.point_size = 10;
 	viewer.core.trackball_angle.normalize();
-	viewer.callback_pre_draw = &pre_draw;
+	//viewer.callback_pre_draw = &pre_draw;
 	viewer.callback_key_down = &key_down;
 	viewer.core.is_animating = false;
 	viewer.core.camera_zoom = 2.5;
