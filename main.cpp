@@ -906,6 +906,7 @@
 #include <igl/viewer/Viewer.h>
 #include <igl/bbw.h>
 #include <igl/writeDMAT.h>
+#include <igl/dqs.h>
 //#include <igl/embree/bone_heat.h>
 
 #include <Eigen/Geometry>
@@ -955,7 +956,8 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 				a.matrix().transpose().block(0, 0, dim + 1, dim);
 		}
 		// Compute deformation via LBS as matrix multiplication
-		U = M*T;
+		//U = M*T;
+		igl::dqs(V, W, vQ, vT, U);
 
 		// Also deform skeleton edges
 		MatrixXd CT;
@@ -975,7 +977,7 @@ void set_color(igl::viewer::Viewer &viewer)
 {
 	Eigen::MatrixXd C;
 	igl::jet(W.col(selected).eval(), true, C);
-	viewer.data.set_colors(C);
+	//viewer.data.set_colors(C);
 }
 
 bool key_down(igl::viewer::Viewer &viewer, unsigned char key, int mods)
@@ -1015,35 +1017,8 @@ int main(int argc, char *argv[])
 	igl::column_to_quats(Q, pose);
 	assert(pose.size() == BE.rows());
 
-	// List of boundary indices (aka fixed value indices into VV)
-	VectorXi b;
-	// List of boundary conditions of each weight function
-	MatrixXd bc;
-	igl::boundary_conditions(V, T, C, VectorXi(), BE, MatrixXi(), b, bc);
-
-	// compute BBW weights matrix
-	igl::BBWData bbw_data;
-	// only a few iterations for sake of demo
-	bbw_data.active_set_params.max_iter = 8;
-	bbw_data.verbosity = 2;
-	if (!igl::bbw(V, T, b, bc, bbw_data, W))
-	{
-		return false;
-	}
-
-	//MatrixXd Vsurf = V.topLeftCorner(F.maxCoeff()+1,V.cols());
-	//MatrixXd Wsurf;
-	//if(!igl::bone_heat(Vsurf,F,C,VectorXi(),BE,MatrixXi(),Wsurf))
-	//{
-	//  return false;
-	//}
-	//W.setConstant(V.rows(),Wsurf.cols(),1);
-	//W.topLeftCorner(Wsurf.rows(),Wsurf.cols()) = Wsurf = Wsurf = Wsurf = Wsurf;
-
-	// Normalize weights to sum to one
-	igl::normalize_row_sums(W, W);
-	igl::writeDMAT("../data/hand-weights.dmat",W);
-
+	igl::readDMAT("../data/hand-weights.dmat", W);
+	cout << W.rows() << " " << W.cols() << endl;
 	// precompute linear blend skinning matrix
 	igl::lbs_matrix(V, W, M);
 
