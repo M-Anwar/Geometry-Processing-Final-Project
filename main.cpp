@@ -905,6 +905,7 @@
 #include <igl/readTGF.h>
 #include <igl/viewer/Viewer.h>
 #include <igl/bbw.h>
+#include <igl/writeDMAT.h>
 //#include <igl/embree/bone_heat.h>
 
 #include <Eigen/Geometry>
@@ -1041,6 +1042,8 @@ int main(int argc, char *argv[])
 
 	// Normalize weights to sum to one
 	igl::normalize_row_sums(W, W);
+	igl::writeDMAT("../data/hand-weights.dmat",W);
+
 	// precompute linear blend skinning matrix
 	igl::lbs_matrix(V, W, M);
 
