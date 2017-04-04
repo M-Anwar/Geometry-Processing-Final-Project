@@ -148,7 +148,7 @@ bool recompute = true;
 bool show_weights = false;
 int bone_index = 0;
 bool debug_implicits = false;
-bool use_arm = true;
+bool use_arm = false;
 
 using namespace Eigen;
 using namespace std;
@@ -670,7 +670,7 @@ int main(int argc, char *argv[])
 			mesh.bones[i].hrbf_recon_verts = mesh.bones[i].vertices;
 		}
 	}
-
+	cout << "Computing Initial Offsets" << endl;
 	//Set identity transform to calculate initial signed distances.
 	MatrixXd T(BE.rows()*(3 + 1), 3);
 	for (int e = 0;e<BE.rows();e++)
@@ -689,42 +689,43 @@ int main(int argc, char *argv[])
 	mesh.previous_gradients = MatrixXd::Zero(mesh.vertices.rows(), 3);
 	mesh.offsets = MatrixXd::Zero(mesh.vertices.rows(), 1);
 
+	cout << "Computing Neighbors and Weights" << endl;
 	//Compute neighbors 
 	igl::adjacency_list(F, mesh.neighbors);
 	
 	// Compute mean value coordinates
-	mesh.neighbor_weights.resize(mesh.vertices.rows());
-	for (unsigned i = 0; i < mesh.vertices.rows(); i++) {
+	//mesh.neighbor_weights.resize(mesh.vertices.rows());
+	//for (unsigned i = 0; i < mesh.vertices.rows(); i++) {
 
-		// Project neighbors on tangent plane
-		std::vector<Eigen::RowVector3d> projections;
-		for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
-			Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
-			projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
-		}
+	//	// Project neighbors on tangent plane
+	//	std::vector<Eigen::RowVector3d> projections;
+	//	for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
+	//		Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
+	//		projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
+	//	}
 
-		// Compute angles
-		std::vector<float> angles;
-		for (unsigned j = 0; j < projections.size(); ++j) {
-			float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);			
-			angles.push_back(std::acos(cosine));
-		}
+	//	// Compute angles
+	//	std::vector<float> angles;
+	//	for (unsigned j = 0; j < projections.size(); ++j) {
+	//		float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);			
+	//		angles.push_back(std::acos(cosine));
+	//	}
 
-		// Compute barycentric coordinates
-		float sum = 0;
-		for (unsigned j = 0; j < projections.size(); ++j) {
-			float length = projections[j].norm();
-			float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
-			float tan2 = std::tan(angles[j] * 0.5f);
-			float weight = (tan1 + tan2) / length;
-			mesh.neighbor_weights[i].push_back(weight);
-			sum += weight;
-		}
+	//	// Compute barycentric coordinates
+	//	float sum = 0;
+	//	for (unsigned j = 0; j < projections.size(); ++j) {
+	//		float length = projections[j].norm();
+	//		float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
+	//		float tan2 = std::tan(angles[j] * 0.5f);
+	//		float weight = (tan1 + tan2) / length;
+	//		mesh.neighbor_weights[i].push_back(weight);
+	//		sum += weight;
+	//	}
 
-		// Normalize weights
-		for (unsigned j = 0; j < projections.size(); ++j)
-			mesh.neighbor_weights[i][j] /= sum;
-	}
+	//	// Normalize weights
+	//	for (unsigned j = 0; j < projections.size(); ++j)
+	//		mesh.neighbor_weights[i][j] /= sum;
+	//}
 
 
 	bone_colors << 0.0, 1.0, 1.0,
