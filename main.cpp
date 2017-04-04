@@ -310,7 +310,7 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 				face_row += recon_face_rows;
 				face_accum += mesh.bones[i].hrbf_recon_verts.rows();
 
-				C.block(color_row, 0, recon_face_rows,3) = bone_colors.row(i%mesh.bones.size()).replicate(recon_face_rows, 1);
+				C.block(color_row, 0, recon_face_rows,3) = bone_colors.row(i%bone_colors.rows()).replicate(recon_face_rows, 1);
 				color_row += recon_face_rows;
 					
 			}			
@@ -454,7 +454,7 @@ int main(int argc, char *argv[])
 	
 	igl::per_vertex_normals(U, F, N_vertices);
 	cout << "Total faces: " << F.rows() << endl;
-
+	cout << "Total Vertices: " << V.rows() << endl;
 	
 	mesh.vertices = V;
 	mesh.faces = F;
@@ -520,6 +520,13 @@ int main(int argc, char *argv[])
 		cout << "\tVertices: " << mesh.bones[i].vertices.rows() << 
 				" Faces: " << mesh.bones[i].faces.rows() << endl;
 	}
+	int total_verts = 0, total_faces = 0;
+	for (int i = 0;i < mesh.bones.size();i++) {
+		total_verts += mesh.bones[i].vertices.rows();
+		total_faces += mesh.bones[i].faces.rows();
+	}
+	cout << "Total Used Vertices: " << total_verts << endl;
+	cout << "Total Used Faces: " << total_faces << endl;
 	//cout << "C values" << endl;
 	//cout << mesh.C << endl;
 	//cout << "BE Values" << endl;
@@ -691,41 +698,43 @@ int main(int argc, char *argv[])
 
 	cout << "Computing Neighbors and Weights" << endl;
 	//Compute neighbors 
-	igl::adjacency_list(F, mesh.neighbors);
-	
+	igl::adjacency_list(mesh.faces, mesh.neighbors);
+	cout <<"Neighbor Vertex Size: " << mesh.neighbors.size() << endl;
+	cout <<"Vertices: "<< mesh.vertices.rows() << endl;
+	cout << mesh.faces.maxCoeff() << endl;
 	// Compute mean value coordinates
-	//mesh.neighbor_weights.resize(mesh.vertices.rows());
-	//for (unsigned i = 0; i < mesh.vertices.rows(); i++) {
+	mesh.neighbor_weights.resize(mesh.vertices.rows());
+	for (unsigned i = 0; i < mesh.neighbors.size(); i++) {
 
-	//	// Project neighbors on tangent plane
-	//	std::vector<Eigen::RowVector3d> projections;
-	//	for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
-	//		Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
-	//		projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
-	//	}
+		// Project neighbors on tangent plane
+		std::vector<Eigen::RowVector3d> projections;
+		for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
+			Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
+			projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
+		}
 
-	//	// Compute angles
-	//	std::vector<float> angles;
-	//	for (unsigned j = 0; j < projections.size(); ++j) {
-	//		float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);			
-	//		angles.push_back(std::acos(cosine));
-	//	}
+		// Compute angles
+		std::vector<float> angles;
+		for (unsigned j = 0; j < projections.size(); ++j) {
+			float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);			
+			angles.push_back(std::acos(cosine));
+		}
 
-	//	// Compute barycentric coordinates
-	//	float sum = 0;
-	//	for (unsigned j = 0; j < projections.size(); ++j) {
-	//		float length = projections[j].norm();
-	//		float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
-	//		float tan2 = std::tan(angles[j] * 0.5f);
-	//		float weight = (tan1 + tan2) / length;
-	//		mesh.neighbor_weights[i].push_back(weight);
-	//		sum += weight;
-	//	}
+		// Compute barycentric coordinates
+		float sum = 0;
+		for (unsigned j = 0; j < projections.size(); ++j) {
+			float length = projections[j].norm();
+			float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
+			float tan2 = std::tan(angles[j] * 0.5f);
+			float weight = (tan1 + tan2) / length;
+			mesh.neighbor_weights[i].push_back(weight);
+			sum += weight;
+		}
 
-	//	// Normalize weights
-	//	for (unsigned j = 0; j < projections.size(); ++j)
-	//		mesh.neighbor_weights[i][j] /= sum;
-	//}
+		// Normalize weights
+		for (unsigned j = 0; j < projections.size(); ++j)
+			mesh.neighbor_weights[i][j] /= sum;
+	}
 
 
 	bone_colors << 0.0, 1.0, 1.0,
