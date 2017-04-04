@@ -907,6 +907,7 @@
 #include <igl/bbw.h>
 #include <igl/writeDMAT.h>
 #include <igl/dqs.h>
+#include <igl/directed_edge_orientations.h>
 //#include <igl/embree/bone_heat.h>
 
 #include <Eigen/Geometry>
@@ -915,6 +916,8 @@
 #include <algorithm>
 #include <iostream>
 
+
+bool use_arm = false;
 
 typedef
 std::vector<Eigen::Quaterniond, Eigen::aligned_allocator<Eigen::Quaterniond> >
@@ -925,7 +928,8 @@ int selected = 0;
 Eigen::MatrixXd V, W, U, C, M;
 Eigen::MatrixXi T, F, BE;
 Eigen::VectorXi P;
-RotationList pose;
+RotationList hand_pose;
+std::vector<RotationList > poses;
 double anim_t = 1.0;
 double anim_t_dir = -0.03;
 
@@ -935,16 +939,34 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 	using namespace std;
 	if (viewer.core.is_animating)
 	{
-		// Interpolate pose and identity
-		RotationList anim_pose(pose.size());
-		for (int e = 0;e<pose.size();e++)
-		{
-			anim_pose[e] = pose[e].slerp(anim_t, Quaterniond::Identity());
-		}
-		// Propogate relative rotations via FK to retrieve absolute transformations
+
 		RotationList vQ;
 		vector<Vector3d> vT;
-		igl::forward_kinematics(C, BE, P, anim_pose, vQ, vT);
+		if(use_arm){
+			//Find pose interval
+			const int begin = (int)floor(anim_t) % poses.size();
+			const int end = (int)(floor(anim_t) + 1) % poses.size();
+			const double t = anim_t - floor(anim_t);
+
+			// Interpolate pose and identity
+			RotationList anim_pose(poses[begin].size());
+			for (int e = 0;e<poses[begin].size();e++)
+			{
+				anim_pose[e] = poses[begin][e].slerp(t, poses[end][e]);
+			}
+			igl::forward_kinematics(C, BE, P, anim_pose, vQ, vT);
+		}
+		else{
+			// Interpolate pose and identity
+			RotationList anim_pose(hand_pose.size());
+			for (int e = 0;e<hand_pose.size();e++)
+			{
+				anim_pose[e] = hand_pose[e].slerp(anim_t, Quaterniond::Identity());
+			}
+			igl::forward_kinematics(C, BE, P, anim_pose, vQ, vT);
+		}
+		// Propogate relative rotations via FK to retrieve absolute transformations
+				
 		const int dim = C.cols();
 		MatrixXd T(BE.rows()*(dim + 1), dim);
 		for (int e = 0;e<BE.rows();e++)
@@ -968,7 +990,9 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 		viewer.data.set_edges(CT, BET, sea_green);
 		viewer.data.compute_normals();
 		anim_t += anim_t_dir;
-		anim_t_dir *= (anim_t >= 1.0 || anim_t <= 0.0 ? -1.0 : 1.0);
+		if(!use_arm){
+			anim_t_dir *= (anim_t >= 1.0 || anim_t <= 0.0 ? -1.0 : 1.0);
+		}
 	}
 	return false;
 }
@@ -1005,20 +1029,54 @@ int main(int argc, char *argv[])
 {
 	using namespace Eigen;
 	using namespace std;
-	igl::readMESH("../data/hand.mesh", V, T, F);
-	U = V;
-	igl::readTGF("../data/hand.tgf", C, BE);
-	// retrieve parents for forward kinematics
-	igl::directed_edge_parents(BE, P);
 
-	// Read pose as matrix of quaternions per row
-	MatrixXd Q;
-	igl::readDMAT("../data/hand-pose.dmat", Q);
-	igl::column_to_quats(Q, pose);
-	assert(pose.size() == BE.rows());
+	if(use_arm){
+		igl::readOBJ("../data/arm.obj", V, F);
+		V = 3 * V;
+		U = V;
+		cout << "Vertices: " << V.rows() << endl;
+		igl::readTGF("../data/arm.tgf", C, BE);
+		C = 3 * C;
+		// retrieve parents for forward kinematics
+		igl::directed_edge_parents(BE, P);
+		
+		RotationList rest_pose;
+		igl::directed_edge_orientations(C, BE, rest_pose);
+		poses.resize(4, RotationList(4, Quaterniond::Identity()));
+		// poses[1] // twist
+		const Quaterniond twist(AngleAxisd(igl::PI, Vector3d(1, 0, 0)));
+		poses[1][2] = rest_pose[2] * twist*rest_pose[2].conjugate();
+		const Quaterniond bend(AngleAxisd(-igl::PI*0.7, Vector3d(0, 0, 1)));
+		poses[3][2] = rest_pose[2] * bend*rest_pose[2].conjugate();
 
-	igl::readDMAT("../data/hand-weights.dmat", W);
-	cout << W.rows() << " " << W.cols() << endl;
+		igl::readDMAT("../data/arm-weights.dmat", W);
+
+		MatrixXd mask = MatrixXd::Zero(W.rows(), W.cols());
+		W = (W.array() < 0.01).select(mask, W);
+		anim_t =0.0f;
+		anim_t_dir =0.015;
+	}
+	else{
+
+		igl::readMESH("../data/hand.mesh", V, T, F);
+		U = V;
+		igl::readTGF("../data/hand.tgf", C, BE);
+		// retrieve parents for forward kinematics
+		igl::directed_edge_parents(BE, P);
+
+
+
+
+		// Read pose as matrix of quaternions per row
+		MatrixXd Q;
+		igl::readDMAT("../data/hand-pose.dmat", Q);
+		igl::column_to_quats(Q, hand_pose);
+		assert(hand_pose.size() == BE.rows());
+
+		igl::readDMAT("../data/hand-weights.dmat", W);
+		cout << W.rows() << " " << W.cols() << endl;
+	}
+
 	// precompute linear blend skinning matrix
 	igl::lbs_matrix(V, W, M);
 
