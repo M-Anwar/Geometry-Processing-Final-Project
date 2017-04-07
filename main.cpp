@@ -28,7 +28,7 @@
 #include <igl/adjacency_list.h>
 
 #include<float.h>
-#include "skin_implicit.h"
+#include "test_cloth.h"
 
 typedef HRBF_fit<float, 3, Rbf_pow3<float> > HRBF;
 struct Bone {
@@ -147,7 +147,7 @@ bool use_dqs = false;
 bool recompute = true;
 bool show_weights = false;
 int bone_index = 0;
-bool debug_implicits = false;
+bool debug_implicits = true;
 bool use_arm = false;
 
 using namespace Eigen;
@@ -331,11 +331,11 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 		}		
 
 		if (show_weights) {
-			Eigen::MatrixXd bone_weight = mesh.offsets;//W.col(bone_index);
+			Eigen::MatrixXd bone_weight = W.col(bone_index); //mesh.offsets;
 			Eigen::MatrixXd Color;
 			igl::parula(bone_weight, bone_weight.minCoeff(), bone_weight.maxCoeff(), Color);
 			viewer.data.set_colors(Color);
-			viewer.data.add_edges(U, (U + 0.01*mesh.previous_gradients).eval(), Eigen::RowVector3d(1, 0, 0));
+			//viewer.data.add_edges(U, (U + 0.01*mesh.previous_gradients).eval(), Eigen::RowVector3d(1, 0, 0));
 		}
 		if (show_hrbf_points) {
 			viewer.data.set_points(mesh.bones[bone_index].hrbf_points, Eigen::RowVector3d(1, 0, 0));
@@ -403,10 +403,13 @@ bool key_down(igl::viewer::Viewer &viewer, unsigned char key, int mods)
 }
 
 
-
+bool run_cloth_sim = true;
 
 int main(int argc, char *argv[])
 {
+	if (run_cloth_sim) {
+		return cloth_sim::test_cloth();
+	}
 	if (use_arm) {
 		igl::readOBJ("../data/arm.obj", V, F);
 		V = 3 * V;
@@ -766,11 +769,12 @@ int main(int argc, char *argv[])
 	viewer.core.is_animating = false;
 	viewer.core.camera_zoom = 2.5;
 	viewer.core.animation_max_fps = 30.;
-	viewer.core.background_color = Eigen::Vector4f(0.5, 0.5, 0.5,1);
+	viewer.core.background_color = Eigen::Vector4f(1.0, 1.0,1.0,1);
 	cout << "Press [d] to toggle between LBS and DQS" << endl <<
 		"Press [w] to show weights and [e] to cycle between bones" <<endl <<
 		"Press [space] to toggle animation" << endl;
 	viewer.launch();
+	cout << "WE REACHED THE END OF THE PROGRAM" << endl;
 }
 
 ////int main(int argc, char *argv[])
