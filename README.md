@@ -16,6 +16,8 @@ See
 Once built, you can execute the assignment from inside the `build/` by running:
 
     ./Implicit_Skinning
+  
+> Note: Make sure you cmake or build in "release" mode. Otherwise the examples run impossibly slow. 
 
 ### Implicit Skinning Example
 When running the implicit skinning example, the following key commands will modify viewer to show different visualizations.

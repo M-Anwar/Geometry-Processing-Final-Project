@@ -300,7 +300,7 @@ namespace cloth_sim {
 		void makeConstraint(Particle *p1, Particle *p2) { constraints.push_back(Constraint(p1, p2)); }
 
 
-		/* A private method used by drawShaded() and addWindForcesForTriangle() to retrieve the
+		/* A private method used by and addWindForcesForTriangle() to retrieve the
 		normal vector of the triangle defined by the position of the particles p1, p2, and p3.
 		The magnitude of the normal vector is equal to the area of the parallelogram defined by p1, p2 and p3
 		*/
@@ -339,13 +339,10 @@ namespace cloth_sim {
 			for (int x = 0; x<num_particles_width; x++)
 			{
 				for (int y = 0; y<num_particles_height; y++)
-				{
-					/*Vec3 pos = Vec3(posx + (width * (x/(float)num_particles_width)),
-					-height * (y/(float)num_particles_height) + posy,
-					posz);*/
+				{					
 					Vec3 pos = Vec3(posx + (width * (x / (float)num_particles_width)),
 						posy, -height * (y / (float)num_particles_height) + posz);
-					particles[y*num_particles_width + x] = Particle(pos); // insert particle in column x at y'th row
+					particles[y*num_particles_width + x] = Particle(pos); 
 				}
 			}
 
@@ -376,10 +373,9 @@ namespace cloth_sim {
 			
 			for (int i = 0;i<3; i++)
 			{
-				getParticle(0, i)->offsetPos(Vec3(0.0, 0.0, -0.1)); // moving the particle a bit towards the center, to make it hang more natural - because I like it ;)
-				getParticle(0 ,i)->makeUnmovable(); 
-				 
-				//getParticle(0+i ,0)->offsetPos(Vec3(-0.5,0.0,0.0)); // moving the particle a bit towards the center, to make it hang more natural - because I like it ;)
+				getParticle(0, i)->offsetPos(Vec3(0.0, 0.0, -0.1)); // moving the particle a bit towards the center, to make it hang more natural
+				getParticle(0 ,i)->makeUnmovable(); 				 
+				
 				getParticle(0,num_particles_height - 1 - i)->offsetPos(Vec3(0.0, 0.0,0.1));
 				getParticle(0,num_particles_height-1-i)->makeUnmovable();
 			}
@@ -488,9 +484,9 @@ namespace cloth_sim {
 			{
 				Vec3 v = (*particle).getPos() - center;
 				float l = v.length();
-				if (v.length() < radius) // if the particle is inside the ball
+				if (v.length() < radius) 
 				{
-					(*particle).offsetPos(v.normalized()*(radius - l)); // project the particle to the surface of the ball
+					(*particle).offsetPos(v.normalized()*(radius - l)); 
 				}
 			}
 		}	
@@ -624,19 +620,21 @@ namespace cloth_sim {
 					a.matrix().transpose().block(0, 0, dim + 1, dim);
 			}
 
-			U = M*T;
+			U = V;
+			//U = M*T;
 
 			cloth1.addForce(Vec3(0, -0.01, 0)*TIME_STEPSIZE2); // add gravity each frame, pointing down	
 			//cloth1.windForce(Vec3(0.5, 0.2, 0.1)*TIME_STEPSIZE2); // generate some wind each frame
 			cloth1.timeStep(); // calculate the particle positions of the next frame
 			Eigen::Vector3d pos = U.row(5000);
+			cloth1.ballCollision(Vec3(pos[0], pos[1], pos[2]), 0.3);
+			
 
-			cloth1.ballCollision(Vec3(pos[0],pos[1],pos[2]), 0.6);
-			cloth1.implicitCollision(mesh, T, int_points); // resolve collision with the ball
 
-			//U = M*T;	
-			//U = V;
-			anim_t += anim_t_dir;				
+			cloth1.implicitCollision(mesh, T, int_points); // resolve collision with the surface
+
+				
+			//anim_t += anim_t_dir;				
 			
 		}
 
