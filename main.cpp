@@ -148,7 +148,7 @@ bool recompute = true;
 bool show_weights = false;
 int bone_index = 0;
 bool debug_implicits = true;
-bool use_arm = false;
+bool use_arm = true;
 
 using namespace Eigen;
 using namespace std;
@@ -201,8 +201,8 @@ bool pre_draw(igl::viewer::Viewer & viewer)
 			//igl::dqs(V, W, vQ, vT, U);
 			//skin_implicit(V, F, W, T, vQ, vT, U);
 			//Do implicit skinning here
-			//igl::dqs(V, W, vQ, vT, U);
-			U = M*T;
+			igl::dqs(V, W, vQ, vT, U);
+			//U = M*T;
 
 			int v_count = mesh.vertices.rows();
 

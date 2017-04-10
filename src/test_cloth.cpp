@@ -15,6 +15,7 @@
 #include <igl/readTGF.h>
 #include <igl/viewer/Viewer.h>
 #include <igl/column_to_quats.h>
+#include <igl/random_points_on_mesh.h>
 
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
@@ -30,11 +31,13 @@
 #include <igl/barycenter.h>
 #include <igl/per_face_normals.h>
 
+#include<float.h>
+
 
 namespace cloth_sim {
 	/* Some physics constants */
 	#define DAMPING 0.01 // how much to damp the cloth simulation each frame
-	#define TIME_STEPSIZE2 0.5*0.5 // how large time step each particle takes each frame
+	#define TIME_STEPSIZE2 0.4*0.5 // how large time step each particle takes each frame
 	#define CONSTRAINT_ITERATIONS 5 // how many iterations of constraint satisfaction each frame (more is rigid, less is soft)
 
 	typedef HRBF_fit<float, 3, Rbf_pow3<float> > HRBF;
@@ -105,7 +108,7 @@ namespace cloth_sim {
 		Eigen::Vector4d grad_2(grad(0), grad(1), grad(2), 0);
 		Eigen::Vector4d grad_3 = -(T * grad_2);
 		gradient = grad_3.topRows(3);
-		return reparam(distance);
+		return distance;//reparam(distance);
 	}
 	float vert_distance(const ImplicitMesh &mesh, const Eigen::MatrixXd &vertices, int vertex_idx, const Eigen::MatrixXd &transforms, Eigen::Vector3d &gradient) {
 		Eigen::Vector3d g;
@@ -234,6 +237,12 @@ namespace cloth_sim {
 
 		void offsetPos(const Vec3 v) { if (movable) pos += v; }
 
+		void setPos(const Vec3 v) { 
+			if (movable) {
+				pos = v;
+			} 
+		}
+
 		void makeUnmovable() { movable = false; }
 
 		void addToNormal(Vec3 normal)
@@ -244,6 +253,7 @@ namespace cloth_sim {
 		Vec3& getNormal() { return accumulated_normal; } // notice, the normal is not unit length
 
 		void resetNormal() { accumulated_normal = Vec3(0, 0, 0); }
+		bool isMovable() { return movable; }
 
 	};
 
@@ -316,27 +326,12 @@ namespace cloth_sim {
 			p1->addForce(force);
 			p2->addForce(force);
 			p3->addForce(force);
-		}
-
-		/* A private method used by drawShaded(), that draws a single triangle p1,p2,p3 with a color*/
-		void drawTriangle(Particle *p1, Particle *p2, Particle *p3, const Vec3 color)
-		{
-			glColor3fv((GLfloat*)&color);
-
-			glNormal3fv((GLfloat *)&(p1->getNormal().normalized()));
-			glVertex3fv((GLfloat *)&(p1->getPos()));
-
-			glNormal3fv((GLfloat *)&(p2->getNormal().normalized()));
-			glVertex3fv((GLfloat *)&(p2->getPos()));
-
-			glNormal3fv((GLfloat *)&(p3->getNormal().normalized()));
-			glVertex3fv((GLfloat *)&(p3->getPos()));
-		}
+		}		
 
 	public:
 
 		/* This is a important constructor for the entire system of particles and constraints*/
-		Cloth(float posx, float posy, float width, float height, int num_particles_width, int num_particles_height) : num_particles_width(num_particles_width), num_particles_height(num_particles_height)
+		Cloth(float posx, float posy, float posz, float width, float height, int num_particles_width, int num_particles_height) : num_particles_width(num_particles_width), num_particles_height(num_particles_height)
 		{
 			particles.resize(num_particles_width*num_particles_height); //I am essentially using this vector as an array with room for num_particles_width*num_particles_height particles
 
@@ -345,11 +340,11 @@ namespace cloth_sim {
 			{
 				for (int y = 0; y<num_particles_height; y++)
 				{
-					Vec3 pos = Vec3(posx + (width * (x/(float)num_particles_width)),
+					/*Vec3 pos = Vec3(posx + (width * (x/(float)num_particles_width)),
 					-height * (y/(float)num_particles_height) + posy,
-					0);
-					/*Vec3 pos = Vec3(width * (x / (float)num_particles_width),
-						0, -height * (y / (float)num_particles_height));*/
+					posz);*/
+					Vec3 pos = Vec3(posx + (width * (x / (float)num_particles_width)),
+						posy, -height * (y / (float)num_particles_height) + posz);
 					particles[y*num_particles_width + x] = Particle(pos); // insert particle in column x at y'th row
 				}
 			}
@@ -379,10 +374,14 @@ namespace cloth_sim {
 				}
 			}
 			
-			for (int i = 0;i<num_particles_height; i++)
+			for (int i = 0;i<3; i++)
 			{
-				//getParticle(0 ,i)->offsetPos(Vec3(0.5,0.0,0.0)); // moving the particle a bit towards the center, to make it hang more natural - because I like it ;)
-				getParticle(0 ,i)->makeUnmovable(); 			
+				getParticle(0, i)->offsetPos(Vec3(0.0, 0.0, -0.1)); // moving the particle a bit towards the center, to make it hang more natural - because I like it ;)
+				getParticle(0 ,i)->makeUnmovable(); 
+				 
+				//getParticle(0+i ,0)->offsetPos(Vec3(-0.5,0.0,0.0)); // moving the particle a bit towards the center, to make it hang more natural - because I like it ;)
+				getParticle(0,num_particles_height - 1 - i)->offsetPos(Vec3(0.0, 0.0,0.1));
+				getParticle(0,num_particles_height-1-i)->makeUnmovable();
 			}
 		}
 	
@@ -421,13 +420,13 @@ namespace cloth_sim {
 					int t3 = (x + 1) *num_particles_height + y;
 					int t4 = (x + 1)*num_particles_height + (y + 1);
 
-					f_triplets.emplace_back(count, 0, t1);
+					f_triplets.emplace_back(count, 0, t3);
 					f_triplets.emplace_back(count, 1, t2);
-					f_triplets.emplace_back(count, 2, t3);
+					f_triplets.emplace_back(count, 2, t1);
 
-					f_triplets.emplace_back(count+1, 0, t2);
+					f_triplets.emplace_back(count+1, 0, t3);
 					f_triplets.emplace_back(count+1, 1, t4);
-					f_triplets.emplace_back(count+1, 2, t3);
+					f_triplets.emplace_back(count+1, 2, t2);
 
 					count+=2;
 				}
@@ -481,11 +480,7 @@ namespace cloth_sim {
 				}
 			}
 		}
-
-		/* used to detect and resolve the collision of the cloth with the ball.
-		This is based on a very simples scheme where the position of each particle is simply compared to the sphere and corrected.
-		This also means that the sphere can "slip through" if the ball is small enough compared to the distance in the grid bewteen particles
-		*/
+				
 		void ballCollision(const Vec3 center, const float radius)
 		{
 			std::vector<Particle>::iterator particle;
@@ -498,20 +493,85 @@ namespace cloth_sim {
 					(*particle).offsetPos(v.normalized()*(radius - l)); // project the particle to the surface of the ball
 				}
 			}
-		}		
+		}	
+		void implicitCollision(const ImplicitMesh & mesh, const Eigen::MatrixXd &transforms, Eigen::MatrixXd &points)
+		{
+
+			Eigen::SparseMatrix<float> int_points;
+			
+			std::vector<Eigen::Triplet<float>> triplets;		
+			triplets.reserve(particles.size() * 3);
+			int count = 0;
+
+			std::vector<Particle>::iterator particle;
+			for (particle = particles.begin(); particle != particles.end(); particle++)
+			{
+				if (!particle->isMovable()) {
+					continue;
+				}
+				Vec3 pos_3 = (*particle).getPos();
+				Eigen::Vector3d pos(pos_3.f[0], pos_3.f[1], pos_3.f[2]);
+
+				Eigen::Vector3d g;
+				Eigen::Vector3d gradient;
+				int bone_idx = -1;
+				float d, result = FLT_MAX;
+				for (int j = 0; j < 3;j++) { 					
+					d = distance(mesh, j, transforms, pos, g);
+					//std::cout << "bone: " << j << " d-val: " << d << std::endl;
+					if (d <  result) {
+						result = d;
+						gradient = g;
+						bone_idx = j;
+					}					
+				}
+
+				if (d < 0.0) { //Inside the surface	
+					
+					/*Eigen::MatrixXd diff = mesh.bones[bone_idx].vertices - Eigen::RowVector3d(pos).replicate(mesh.bones[bone_idx].vertices.rows(),1);
+					int index;
+					diff.rowwise().norm().minCoeff(&index);
+					Eigen::Vector3d new_pos_e = mesh.bones[bone_idx].vertices.row(index);
+					
+					Vec3 new_pos = Vec3(new_pos_e[0], new_pos_e[1], new_pos_e[2]);
+					particle->setPos(new_pos);*/					
+
+					for (int i = 0;i < 100;i++) {
+						if (d > 0.1 || d < -0.01) {
+							Vec3 grad(gradient[0], gradient[1], gradient[2]);
+							(*particle).offsetPos(grad*(d));
+							Vec3 pos_3 = (*particle).getPos();
+							Eigen::Vector3d pos(pos_3.f[0], pos_3.f[1], pos_3.f[2]);
+							d = distance(mesh, bone_idx, transforms, pos, g);
+							gradient = g;
+						}
+					}
+					Vec3 grad(gradient[0], gradient[1], gradient[2]);
+					(*particle).offsetPos(grad*(d)*0.1);
+					
+					triplets.emplace_back(count, 0, pos[0]);
+					triplets.emplace_back(count, 1, pos[1]);
+					triplets.emplace_back(count, 2, pos[2]);
+					count++;
+				}
+
+			}
+			int_points.resize(count, 3);
+			int_points.setFromTriplets(triplets.begin(), triplets.end());
+			points = Eigen::MatrixXd(int_points);
+		}
 	};
 
 
 
 
-	Cloth cloth1(-10,5,7, 5, 25, 20); // one Cloth object of the Cloth class
-
+	Cloth cloth1(-2,2,2.5,7, 5, 50, 40); // one Cloth object of the Cloth class
 	typedef std::vector<Eigen::Quaterniond, Eigen::aligned_allocator<Eigen::Quaterniond> > RotationList;
 	Eigen::MatrixXd bone_colors(4, 3);
 
-
-	Eigen::MatrixXd V, U, W, C, M;
-	Eigen::MatrixXi T, F, F1, BE;
+	Eigen::MatrixXd int_points;
+	Eigen::MatrixXd V, U, W, C, M, N_vertices, Cl;
+	Eigen::MatrixXi T, F, Fl, BE;
 	Eigen::VectorXi P;
 	std::vector<RotationList > poses;
 	RotationList hand_pose;
@@ -527,34 +587,73 @@ namespace cloth_sim {
 	{
 		using namespace std;	
 		using namespace Eigen;
+
 		//Cloth simulation updates
-		cloth1.get_draw(V, F);		
+		cloth1.get_draw(Cl, Fl);
 
 		Eigen::MatrixXd N;
-		igl::per_vertex_normals(V, F, N);		
+		igl::per_vertex_normals(Cl, Fl, N);
+		N = -N;
 		/*viewer.data.set_mesh(V, F);
 		viewer.data.set_normals(N);*/
-		if (step) {
-			cloth1.addForce(Vec3(0, -0.2, 0)*TIME_STEPSIZE2); // add gravity each frame, pointing down	
-			cloth1.windForce(Vec3(0.2, 0.1, 0.01)*TIME_STEPSIZE2); // generate some wind each frame
-			cloth1.timeStep(); // calculate the particle positions of the next frame
-		}
-		
+		if (step) {			
 
-		//Animation updates
-		MatrixXd all_vertices(V.rows() + U.rows(), 3);
-		MatrixXi all_faces(F.rows() + F1.rows(),3);
-		all_vertices.block(0, 0, V.rows(), V.cols()) = V;
-		all_vertices.block(V.rows(), 0, U.rows(), U.cols()) = U;
-		all_faces.block(0, 0, F.rows(), F.cols()) = F;
-		all_faces.block(F.rows(), 0, F1.rows(), F1.cols()) = F1.array() + V.rows();
+			//Animation Updates
+			RotationList vQ;
+			vector<Vector3d> vT;
+			const int begin = (int)floor(anim_t) % poses.size();
+			const int end = (int)(floor(anim_t) + 1) % poses.size();
+			const double t = anim_t - floor(anim_t);
+
+			// Interpolate pose and identity
+			RotationList anim_pose(poses[begin].size());
+			for (int e = 0;e < poses[begin].size();e++)
+			{
+				anim_pose[e] = poses[begin][e].slerp(t, poses[end][e]);
+			}
+			// Propogate relative rotations via FK to retrieve absolute transformations
+			igl::forward_kinematics(C, BE, P, anim_pose, vQ, vT);
+			const int dim = C.cols();
+			MatrixXd T(BE.rows()*(dim + 1), dim);
+			for (int e = 0;e < BE.rows();e++)
+			{
+				Affine3d a = Affine3d::Identity();
+				a.translate(vT[e]);
+				a.rotate(vQ[e]);
+				T.block(e*(dim + 1), 0, dim + 1, dim) =
+					a.matrix().transpose().block(0, 0, dim + 1, dim);
+			}
+
+			U = M*T;
+
+			cloth1.addForce(Vec3(0, -0.01, 0)*TIME_STEPSIZE2); // add gravity each frame, pointing down	
+			//cloth1.windForce(Vec3(0.5, 0.2, 0.1)*TIME_STEPSIZE2); // generate some wind each frame
+			cloth1.timeStep(); // calculate the particle positions of the next frame
+			Eigen::Vector3d pos = U.row(5000);
+
+			cloth1.ballCollision(Vec3(pos[0],pos[1],pos[2]), 0.6);
+			cloth1.implicitCollision(mesh, T, int_points); // resolve collision with the ball
+
+			//U = M*T;	
+			//U = V;
+			anim_t += anim_t_dir;				
+			
+		}
+
+		//Mesh updates
+		MatrixXd all_vertices(Cl.rows() + U.rows(), 3);
+		MatrixXi all_faces(F.rows() + Fl.rows(),3);
+		all_vertices.block(0, 0, Cl.rows(), Cl.cols()) = Cl;
+		all_vertices.block(Cl.rows(), 0, U.rows(), U.cols()) = U;
+		all_faces.block(0, 0, Fl.rows(), Fl.cols()) = Fl;
+		all_faces.block(Fl.rows(), 0, F.rows(), F.cols()) = F.array() + Cl.rows();
 
 		MatrixXd C(all_faces.rows(), 3);
-		C.block(0, 0, F.rows(), 3) = bone_colors.row(0).replicate(F.rows(), 1);
-		C.block(F.rows(), 0, F1.rows(), 3) = bone_colors.row(1).replicate(F1.rows(), 1);
+		C.block(0, 0, Fl.rows(), 3) = bone_colors.row(0).replicate(Fl.rows(), 1);
+		C.block(Fl.rows(), 0, F.rows(), 3) = bone_colors.row(1).replicate(F.rows(), 1);
 
 		Eigen::MatrixXd N2;
-		igl::per_vertex_normals(U, F1, N2);
+		igl::per_vertex_normals(U, F, N2);
 		MatrixXd normals(all_vertices.rows(),3);
 		normals.block(0, 0, N.rows(), N.cols()) = N;
 		normals.block(N.rows(), 0, N2.rows(), N2.cols()) = N2;
@@ -562,6 +661,8 @@ namespace cloth_sim {
 		viewer.data.set_mesh(all_vertices, all_faces);
 		viewer.data.set_normals(normals);
 		viewer.data.set_colors(C);
+		viewer.data.set_points(int_points, Eigen::RowVector3d(1, 0, 0));
+		
 
 		return false;
 	}
@@ -597,8 +698,9 @@ namespace cloth_sim {
 		using namespace Eigen;
 
 		cout << "Running Cloth Simulation" << endl;
-		igl::readOBJ("../data/arm.obj", U, F1);
-		U = 3 * U;				
+		igl::readOBJ("../data/arm.obj", V, F);
+		V = 3 * V;		
+		U = V;
 		igl::readTGF("../data/arm.tgf", C, BE);
 		C = 3 * C;
 		// retrieve parents for forward kinematics
@@ -618,15 +720,243 @@ namespace cloth_sim {
 		MatrixXd mask = MatrixXd::Zero(W.rows(), W.cols());
 		W = (W.array() < 0.01).select(mask, W);
 		igl::lbs_matrix(V, W, M);
+		igl::per_vertex_normals(U, F, N_vertices);
+		cout << "Total faces: " << F.rows() << endl;
+		cout << "Total Vertices: " << V.rows() << endl;
 
 		mesh.vertices = V;
-		mesh.faces = F1;
+		mesh.faces = F;
 		mesh.weights = W;
 		mesh.bones.resize(W.cols());
 		mesh.C = C;
 		mesh.BE = BE;
 		mesh.parents = P;
 	
+		///Segment the Mesh
+		std::cout << "Segmenting Mesh-> Bones: " << W.cols() << endl;
+		//Find the bone that has the most influence on the vertices
+		Eigen::MatrixXd max_index(W.rows(), 1);
+		Eigen::MatrixXd vertex_bone_index(W.rows(), 1);
+		for (int i = 0; i < W.rows();i++) {
+			double max_val = W.row(i).maxCoeff(&max_index(i));
+		}
+
+		for (int i = 0; i < W.cols();i++) {
+
+			//Get all the vertices that belong to the bone
+			int num_vertices = 0;
+			for (int j = 0;j < max_index.rows();j++) {
+				if (max_index(j) == i) {
+					num_vertices++;
+				}
+			}
+			Eigen::MatrixXd bone_vertices(num_vertices, 3);
+			int count = 0;
+			for (int j = 0;j < max_index.rows();j++) {
+				if (max_index(j) == i) {
+					bone_vertices.row(count) = V.row(j);
+					vertex_bone_index(j) = count;
+					count++;
+				}
+			}
+
+			Eigen::SparseMatrix<int> bone_faces;
+			std::vector<Eigen::Triplet<int>> triplets;
+			count = 0;
+			for (int j = 0; j < F.rows();j++) {
+				bool add = true;
+				for (int k = 0; k < 3;k++) {
+					if (max_index(F(j, k)) != i) {
+						add = false;
+						break;
+					}
+				}
+				if (add) {
+					triplets.emplace_back(count, 0, vertex_bone_index(F(j, 0)));
+					triplets.emplace_back(count, 1, vertex_bone_index(F(j, 1)));
+					triplets.emplace_back(count, 2, vertex_bone_index(F(j, 2)));
+					count++;
+				}
+			}
+			bone_faces.resize(count, 3);
+			bone_faces.setFromTriplets(triplets.begin(), triplets.end());
+
+			mesh.bones[i].vertices = bone_vertices;
+			mesh.bones[i].faces = MatrixXi(bone_faces);
+			igl::per_vertex_normals(mesh.bones[i].vertices, mesh.bones[i].faces, mesh.bones[i].normals);
+
+			cout << "\tVertices: " << mesh.bones[i].vertices.rows() <<
+				" Faces: " << mesh.bones[i].faces.rows() << endl;
+		}
+		int total_verts = 0, total_faces = 0;
+		for (int i = 0;i < mesh.bones.size();i++) {
+			total_verts += mesh.bones[i].vertices.rows();
+			total_faces += mesh.bones[i].faces.rows();
+		}
+		cout << "Total Used Vertices: " << total_verts << endl;
+		cout << "Total Used Faces: " << total_faces << endl;
+		//cout << "C values" << endl;
+		//cout << mesh.C << endl;
+		//cout << "BE Values" << endl;
+		//cout << mesh.BE << endl;
+
+		///Compute HRBFs for each bone
+		int num_points = 100;
+		for (int i = 0; i < mesh.bones.size(); i++) {
+			Eigen::MatrixXd B;
+			Eigen::MatrixXi FI;
+
+			//sample unique random points on the mesh for the bone				
+			igl::random_points_on_mesh(num_points, mesh.bones[i].vertices, mesh.bones[i].faces, B, FI);
+			vector<int> vertex_indices;
+			for (int j = 0;j < FI.rows();j++) {
+				vertex_indices.push_back(mesh.bones[i].faces(FI(j), 0));
+			}
+			std::set<int> s(vertex_indices.begin(), vertex_indices.end());
+
+			Eigen::MatrixXd P(s.size(), 3);
+			Eigen::MatrixXd N(s.size(), 3);
+			int v_idx = 0;
+			for (auto it = s.begin(); it != s.end(); it++) {
+				P.row(v_idx) = mesh.bones[i].vertices.row(*it);
+				N.row(v_idx) = mesh.bones[i].normals.row(*it);
+				v_idx++;
+			}
+
+			//Remove extremum point that lie too close to the joint
+			double h = 0.05;
+			Eigen::SparseMatrix<double> new_points;
+			Eigen::SparseMatrix<double> new_normals;
+			std::vector<Eigen::Triplet<double>> tripletsP;
+			std::vector<Eigen::Triplet<double>> tripletsN;
+			Eigen::Vector3d bone_diff = mesh.C.row(mesh.BE(i, 1)) - mesh.C.row(mesh.BE(i, 0));
+			double square_norm = bone_diff.squaredNorm();
+			int count = 0;
+			for (int j = 0; j < P.rows(); j++) {
+				Eigen::Vector3d vertex_dist = P.row(j) - mesh.C.row(mesh.BE(i, 0));
+				double val = vertex_dist.dot(bone_diff) / square_norm;
+				if (val > h && val < (1 - h)) {
+					tripletsP.emplace_back(count, 0, P(j, 0));
+					tripletsP.emplace_back(count, 1, P(j, 1));
+					tripletsP.emplace_back(count, 2, P(j, 2));
+					tripletsN.emplace_back(count, 0, N(j, 0));
+					tripletsN.emplace_back(count, 1, N(j, 1));
+					tripletsN.emplace_back(count, 2, N(j, 2));
+					count++;
+				}
+			}
+			//Add HRBF centers near the joints to have proper closure of the distance field
+			MatrixXd max_zero = (mesh.bones[i].vertices.rowwise() - mesh.C.row(mesh.BE(i, 0))).rowwise().norm();
+			double s_j0 = max_zero.minCoeff();
+			MatrixXd max_one = mesh.bones[i].vertices.rowwise() - mesh.C.row(mesh.BE(i, 1));
+			double s_j1 = max_one.rowwise().norm().minCoeff();
+			RowVector3d n_j0 = mesh.C.row(mesh.BE(i, 0)) - mesh.C.row(mesh.BE(i, 1));
+			RowVector3d n_j1 = mesh.C.row(mesh.BE(i, 1)) - mesh.C.row(mesh.BE(i, 0));
+			n_j0.normalize(); n_j1.normalize();
+			MatrixXd p_j0 = mesh.C.row(mesh.BE(i, 0)) + (s_j0*n_j0);
+			MatrixXd p_j1 = mesh.C.row(mesh.BE(i, 1)) + (s_j1*n_j1);
+			tripletsP.emplace_back(count, 0, p_j0(0));
+			tripletsP.emplace_back(count, 1, p_j0(1));
+			tripletsP.emplace_back(count, 2, p_j0(2));
+			tripletsP.emplace_back(count + 1, 0, p_j1(0));
+			tripletsP.emplace_back(count + 1, 1, p_j1(1));
+			tripletsP.emplace_back(count + 1, 2, p_j1(2));
+			tripletsN.emplace_back(count, 0, n_j0(0));
+			tripletsN.emplace_back(count, 1, n_j0(1));
+			tripletsN.emplace_back(count, 2, n_j0(2));
+			tripletsN.emplace_back(count + 1, 0, n_j1(0));
+			tripletsN.emplace_back(count + 1, 1, n_j1(1));
+			tripletsN.emplace_back(count + 1, 2, n_j1(2));
+			count += 2;
+
+			new_points.resize(count, 3);
+			new_points.setFromTriplets(tripletsP.begin(), tripletsP.end());
+			new_normals.resize(count, 3);
+			new_normals.setFromTriplets(tripletsN.begin(), tripletsN.end());
+			P = (MatrixXd)new_points;
+			N = (MatrixXd)new_normals;
+
+			mesh.bones[i].hrbf_points = P;
+			mesh.bones[i].hrbf_normals = N;
+			cout << "Points: " << P.rows() << endl;
+
+			std::vector<HRBF::Vector> points;
+			points.reserve(P.rows());
+			for (int j = 0; j < P.rows(); j++) {
+				auto p = P.row(j);
+				points.emplace_back(HRBF::Vector(p[0], p[1], p[2]));
+			}
+
+			std::vector<HRBF::Vector> normals;
+			normals.reserve(N.rows());
+			for (int j = 0; j < N.rows(); j++) {
+				auto n = N.row(j);
+				normals.emplace_back(HRBF::Vector(n[0], n[1], n[2]));
+			}
+
+			mesh.bones[i].hrbf.hermite_fit(points, normals);			
+			mesh.bones[i].hrbf_recon_faces = mesh.bones[i].faces;
+			mesh.bones[i].hrbf_recon_verts = mesh.bones[i].vertices;
+			
+		}
+		cout << "Computing Initial Offsets" << endl;
+		//Set identity transform to calculate initial signed distances.
+		MatrixXd T(BE.rows()*(3 + 1), 3);
+		for (int e = 0;e<BE.rows();e++)
+		{
+			Affine3d a = Affine3d::Identity();
+			T.block(e*(3 + 1), 0, 3 + 1, 3) =
+				a.matrix().transpose().block(0, 0, 3 + 1, 3);
+		}
+		//Pre-calculate initial offsets in the HRBF field.
+		MatrixXd offsets(mesh.vertices.rows(), 1);
+		for (int i = 0;i < mesh.vertices.rows();i++) {
+			Vector3d dummy;
+			offsets(i) = vert_distance(mesh, mesh.vertices, i, T, dummy);
+		}
+		mesh.original_offsets = offsets;
+		mesh.previous_gradients = MatrixXd::Zero(mesh.vertices.rows(), 3);
+		mesh.offsets = MatrixXd::Zero(mesh.vertices.rows(), 1);
+
+		cout << "Computing Neighbors and Weights" << endl;
+		//Compute neighbors 
+		igl::adjacency_list(mesh.faces, mesh.neighbors);
+		cout << "Neighbor Vertex Size: " << mesh.neighbors.size() << endl;
+		cout << "Vertices: " << mesh.vertices.rows() << endl;
+		cout << mesh.faces.maxCoeff() << endl;
+		// Compute mean value coordinates
+		mesh.neighbor_weights.resize(mesh.vertices.rows());
+		for (unsigned i = 0; i < mesh.neighbors.size(); i++) {
+
+			// Project neighbors on tangent plane
+			std::vector<Eigen::RowVector3d> projections;
+			for (unsigned j = 0; j < mesh.neighbors[i].size(); j++) {
+				Eigen::RowVector3d delta = mesh.vertices.row(mesh.neighbors[i][j]) - mesh.vertices.row(i);
+				projections.push_back(delta - N_vertices.row(i) * N_vertices.row(i).dot(delta));
+			}
+
+			// Compute angles
+			std::vector<float> angles;
+			for (unsigned j = 0; j < projections.size(); ++j) {
+				float cosine = projections[j].normalized().dot(projections[(j + 1) % projections.size()]);
+				angles.push_back(std::acos(cosine));
+			}
+
+			// Compute barycentric coordinates
+			float sum = 0;
+			for (unsigned j = 0; j < projections.size(); ++j) {
+				float length = projections[j].norm();
+				float tan1 = std::tan(angles[(j + projections.size() - 1) % projections.size()] * 0.5f);
+				float tan2 = std::tan(angles[j] * 0.5f);
+				float weight = (tan1 + tan2) / length;
+				mesh.neighbor_weights[i].push_back(weight);
+				sum += weight;
+			}
+
+			// Normalize weights
+			for (unsigned j = 0; j < projections.size(); ++j)
+				mesh.neighbor_weights[i][j] /= sum;
+		}
 
 		bone_colors << 1.0, 1.0, 0.0,
 			0.0, 1.0, 0.0,
@@ -642,8 +972,8 @@ namespace cloth_sim {
 		viewer.core.is_animating = false;
 		viewer.callback_pre_draw = &pre_draw;
 		viewer.callback_key_down = &key_down;
-		viewer.core.camera_zoom = 2.5;
-		viewer.core.animation_max_fps = 60.;
+		viewer.core.camera_zoom = 1;
+		viewer.core.animation_max_fps = 60.0f;
 		viewer.core.background_color = Eigen::Vector4f(1.0, 1.0, 1.0, 1);
 		cout << "Press [d] to turn on automatic update" << endl <<
 			"Press [a] to increment individual time step" << endl <<
